@@ -1,0 +1,12 @@
+agg: sum
+attention: true
+condition_time: true
+device: cuda
+hidden_nf: 128
+n_dimension: 3
+n_layers: 6
+recurrent: false
+tanh: false
+time_embedding_dim: 128
+act_fn: torch.nn.SiLU()
+atom_type_embedding_dim: 0
