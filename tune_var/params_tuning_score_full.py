@@ -1,16 +1,19 @@
-import torch
 import argparse
-import yaml
-from model import ScoreNet, construct_R
-from tqdm import tqdm
-from training_utils import load_dataset, load_target_dist
-import numpy as np
-import os
 import math
+from pathlib import Path
+
+import numpy as np
+import torch
+import yaml
+from tqdm import tqdm
+
+from model import ScoreNet, construct_R
+from training_utils import load_dataset, load_target_dist
 
 from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR, PARAMS_CHECKPOINTS_LOW_RANK_DIR
+    PARAMS_CHECKPOINTS_LOW_RANK_DIR,
+    get_config_path,
+    get_model_checkpoint_path,
 )
 
 def build_covariance_matrices(dataset, sigma2, lam, n_dim, n_particle, time_steps, proj_mat):
@@ -70,13 +73,15 @@ def main():
     true_samples = load_dataset(dataset=args.dataset, device=device)
 
     # Load the pretrained score model
-    score_checkpoint_path = get_model_checkpoint_path('{args.dataset}', '{args.net}', 'score', {args.model_index})
-
-    config_path = (
-        fstr(Path(__file__).parent.parent / 'consistency_sampling/model/configs/')
-        f'{args.dataset}_{args.net}_config.yaml'
+    score_checkpoint_path = get_model_checkpoint_path(
+        args.dataset,
+        args.net,
+        model_type='score',
+        model_index=args.model_index,
     )
-    with open(config_path, 'r') as f:
+
+    config_path = get_config_path(args.dataset, args.net, 'score')
+    with open(config_path, 'r', encoding='utf-8') as f:
         score_model_config = yaml.safe_load(f)
 
     score_model = ScoreNet(dataset=args.dataset, device=device, model_config=score_model_config, net=args.net).to(device)
@@ -91,10 +96,10 @@ def main():
     true_target_dist = load_target_dist(args.dataset)
 
     # Prepare checkpoint paths
-    param_checkpoint_path = PARAMS_CHECKPOINTS_LOW_RANK_DIR / args.dataset / f"{args.net}_params_{args.params_index}_{args.num_steps}steps_low_rank_{args.cov_form}cov_form.pth"
-    log_dir = os.path.dirname(param_checkpoint_path)
-    os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, f"{os.path.splitext(os.path.basename(param_checkpoint_path))[0]}_log.txt")
+    param_dir = PARAMS_CHECKPOINTS_LOW_RANK_DIR / args.dataset
+    param_dir.mkdir(parents=True, exist_ok=True)
+    param_checkpoint_path = param_dir / f"{args.net}_params_{args.params_index}_{args.num_steps}steps_low_rank.pth"
+    log_file_path = param_checkpoint_path.with_name(param_checkpoint_path.stem + "_log.txt")
 
     # construct projection matrix
     proj_mat = construct_R(n_particle, n_dim, device)

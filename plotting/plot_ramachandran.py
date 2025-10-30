@@ -1,17 +1,16 @@
-import torch
 import argparse
-import os
 import pickle
-import matplotlib.pyplot as plt
-import numpy as np
-# from tqdm import tqdm
+from pathlib import Path
+
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import mdtraj
+import numpy as np
+import torch
 from openmmtools import testsystems
 
 from training_utils import load_target_dist, load_dataset
-# from target_dist import AldpPotentialCart
-# from target_dist.aldp_cartesian import AldpPotentialCart
+from utils.path_config import CHECKPOINTS_DIR, FIGURES_DIR
 
 def detect_chirality_batch(samples: torch.Tensor,
                            center_idx: int,
@@ -167,7 +166,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Define samples base path
-    samples_base_path = CHECKPOINTS_DIR / 'samples' / '{args.dataset}'
+    samples_base_path = CHECKPOINTS_DIR / "samples" / args.dataset
 
     # Get true target distribution and true samples
     # true_target_dist = load_target_dist(args.dataset)
@@ -224,7 +223,7 @@ def main():
     all_log_weights = []
 
     for sample_idx in args.sample_indices:
-        backward_pkl_path = os.path.join(samples_base_path, 'backward', f'{args.num_steps}steps_{sample_idx}sample.pkl')
+        backward_pkl_path = samples_base_path / "backward" / f"{args.num_steps}steps_{sample_idx}sample.pkl"
         
         # Load samples and weights
         with open(backward_pkl_path, 'rb') as f:
@@ -267,10 +266,6 @@ def main():
 
     # Normalize the importance weights
 
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
     w = torch.exp(log_w - log_w.max())
     w = w / w.sum()
 
@@ -279,7 +274,7 @@ from utils.path_config import (
 
     # Create figures directory if it doesn't exist
     figures_dir = FIGURES_DIR / 'ramachandran'
-    os.makedirs(figures_dir, exist_ok=True)
+    figures_dir.mkdir(parents=True, exist_ok=True)
     
     # Convert to cartesian coordinates if they're not already
     true_cartesian = true_samples
@@ -306,19 +301,19 @@ from utils.path_config import (
     # 1. Plot for true samples
     print("Generating Ramachandran plot for true samples...")
     fig_true = generate_ramachandran_plot(true_traj, title="Ground Truth Samples", cmap='Blues')
-    fig_true.savefig(f'{figures_dir}/true_ramachandran.pdf', format='pdf', bbox_inches='tight')
+    fig_true.savefig(figures_dir / 'true_ramachandran.pdf', format='pdf', bbox_inches='tight')
     plt.close(fig_true)
     
     # 2. Plot for generated samples (unweighted)
     print("Generating Ramachandran plot for unweighted samples...")
     fig_gen = generate_ramachandran_plot(gen_traj, title="Generated Samples (Unweighted)", cmap='Greens')
-    fig_gen.savefig(f'{figures_dir}/gen_ramachandran_{args.cov_form}_{args.num_steps}steps_{indices_str}.pdf', format='pdf', bbox_inches='tight')
+    fig_gen.savefig(figures_dir / f'gen_ramachandran_{args.cov_form}_{args.num_steps}steps_{indices_str}.pdf', format='pdf', bbox_inches='tight')
     plt.close(fig_gen)
     
     # 3. Plot for reweighted samples
     print("Generating Ramachandran plot for reweighted samples...")
     fig_reweighted = generate_ramachandran_plot(gen_traj, weights=w, title="Generated Samples (Reweighted)", cmap='Reds')
-    fig_reweighted.savefig(f'{figures_dir}/reweighted_ramachandran_{args.cov_form}_{args.num_steps}steps_{indices_str}.pdf', format='pdf', bbox_inches='tight')
+    fig_reweighted.savefig(figures_dir / f'reweighted_ramachandran_{args.cov_form}_{args.num_steps}steps_{indices_str}.pdf', format='pdf', bbox_inches='tight')
     plt.close(fig_reweighted)
     
     # Combined plot using subplots for comparison
@@ -369,7 +364,8 @@ from utils.path_config import (
     # w_normalized = w_np * (len(phi_gen) / w_np.sum())
     
     # Create reweighted arrays by repeating points according to their weights
-    indices = np.random.choice(len(phi_gen), size=len(phi_gen), replace=True, p=w.detach().cpu().numpy())
+    probabilities = w_np / w_np.sum()
+    indices = np.random.choice(len(phi_gen), size=len(phi_gen), replace=True, p=probabilities)
     phi_reweighted = phi_gen[indices]
     psi_reweighted = psi_gen[indices]
     
@@ -389,7 +385,7 @@ from utils.path_config import (
     cbar.set_label('Normalized Density (log scale)', fontsize=20)
     
     # plt.tight_layout()
-    plt.savefig(f'{figures_dir}/combined_ramachandran_{args.cov_form}_{args.num_steps}steps_{indices_str}.pdf', format='pdf', bbox_inches='tight')
+    plt.savefig(figures_dir / f'combined_ramachandran_{args.cov_form}_{args.num_steps}steps_{indices_str}.pdf', format='pdf', bbox_inches='tight')
     plt.close()
     
     print(f"Ramachandran plots saved to {figures_dir}")

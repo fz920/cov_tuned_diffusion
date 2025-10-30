@@ -1,14 +1,14 @@
-import torch
 import argparse
-from tqdm import tqdm
-from score_model import ScoreNet
-from gmm import create_gmm
-import os
 import numpy as np
 
+import torch
+from tqdm import tqdm
+
+from gmm import create_gmm
+from score_model import ScoreNet
 from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
+    get_gmm2_model_checkpoint_path,
+    get_gmm2_params_checkpoint_path,
 )
 
 def initialize_time_steps_params(num_steps, device, T=80.0, eps=0.002):
@@ -68,7 +68,12 @@ def main():
     # Load the diffusion model
     score_model = ScoreNet(input_dim=args.input_dim, n_layers=args.n_layers,
                            hidden_size=args.hidden_size, cov_form=args.cov_form).to(device)
-    score_model.load_state_dict(torch.load(CHECKPOINTS_DIR / 'gmm2_checkpoints/model_checkpoints/{args.input_dim}D_gmm2_score_ckpt_{args.n_layers}layers_{args.hidden_size}hidden_size.pth', map_location=device))
+    checkpoint_path = get_gmm2_model_checkpoint_path(
+        input_dim=args.input_dim,
+        n_layers=args.n_layers,
+        hidden_size=args.hidden_size,
+    )
+    score_model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     score_model.eval()
     score_model.requires_grad_(False)
 
@@ -149,11 +154,14 @@ def main():
 
         print("Final Forward ESS: ", forward_ess_percentage)
 
-        if args.cov_form == 'full':
-            filename = f"/rds/user/fz287/hpc-work/dissertation/checkpoints/gmm2_checkpoints/params_checkpoints/{args.input_dim}D_gmm2_score_params_{num_steps}steps_{args.params_index}_{args.cov_form}_with_time_steps{args.tune_time_steps}_rank{args.rank}.pth"
-        else:
-            filename = f"/rds/user/fz287/hpc-work/dissertation/checkpoints/gmm2_checkpoints/params_checkpoints/{args.input_dim}D_gmm2_score_params_{num_steps}steps_{args.params_index}_{args.cov_form}_with_time_steps{args.tune_time_steps}.pth"
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        filename = get_gmm2_params_checkpoint_path(
+            input_dim=args.input_dim,
+            num_steps=num_steps,
+            params_index=args.params_index,
+            cov_form=args.cov_form,
+            tune_time_steps=args.tune_time_steps,
+            rank=args.rank if args.cov_form == 'full' else None,
+        )
         torch.save({
             'cov_params': cov_params,
             'time_steps': time_steps,

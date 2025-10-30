@@ -1,4 +1,4 @@
-"""Path configuration for the consistency sampling project.
+"""Path configuration helpers for the variance-tuned diffusion project.
 
 This module provides centralized path configuration for the entire project,
 allowing for easy adjustment of paths across all scripts.
@@ -22,6 +22,13 @@ FIGURES_DIR = BASE_DIR / "figures"
 ESS_CHECKPOINTS_DIR = BASE_DIR / "ess_checkpoints"
 ESS_LOG_DIR = BASE_DIR / "ess_log"
 
+# GMM2-specific directories
+GMM2_CHECKPOINTS_DIR = CHECKPOINTS_DIR / "gmm2_checkpoints"
+GMM2_MODEL_CHECKPOINTS_DIR = GMM2_CHECKPOINTS_DIR / "model_checkpoints"
+GMM2_PARAMS_CHECKPOINTS_DIR = GMM2_CHECKPOINTS_DIR / "params_checkpoints"
+GMM2_SAMPLE_CHECKPOINTS_DIR = GMM2_CHECKPOINTS_DIR / "sample_checkpoints"
+GMM2_ESS_CHECKPOINTS_DIR = GMM2_CHECKPOINTS_DIR / "ess_checkpoints"
+
 # Create directories if they don't exist
 for directory in [
     CHECKPOINTS_DIR,
@@ -34,7 +41,12 @@ for directory in [
     SAMPLES_LOW_RANK_DIR,
     FIGURES_DIR,
     ESS_CHECKPOINTS_DIR,
-    ESS_LOG_DIR
+    ESS_LOG_DIR,
+    GMM2_CHECKPOINTS_DIR,
+    GMM2_MODEL_CHECKPOINTS_DIR,
+    GMM2_PARAMS_CHECKPOINTS_DIR,
+    GMM2_SAMPLE_CHECKPOINTS_DIR,
+    GMM2_ESS_CHECKPOINTS_DIR,
 ]:
     os.makedirs(directory, exist_ok=True)
 
@@ -146,4 +158,71 @@ def get_ess_log_path(dataset, model_index, num_steps, params_index, low_rank=Fal
     os.makedirs(base_dir, exist_ok=True)
     
     suffix = "low_rank_" if low_rank else ""
-    return base_dir / f"forward_ess_{suffix}{model_index}model_{num_steps}steps_{params_index}.txt" 
+    return base_dir / f"forward_ess_{suffix}{model_index}model_{num_steps}steps_{params_index}.txt"
+
+
+def get_gmm2_model_checkpoint_path(input_dim, n_layers=7, hidden_size=512):
+    """Path to a trained GMM2 score model checkpoint."""
+    os.makedirs(GMM2_MODEL_CHECKPOINTS_DIR, exist_ok=True)
+    filename = f"{input_dim}D_gmm2_score_ckpt_{n_layers}layers_{hidden_size}hidden_size.pth"
+    return GMM2_MODEL_CHECKPOINTS_DIR / filename
+
+
+def get_gmm2_params_checkpoint_path(
+    input_dim,
+    num_steps,
+    params_index,
+    cov_form,
+    tune_time_steps=False,
+    rank=None,
+):
+    """Path to tuned covariance parameters for the GMM2 experiments."""
+    os.makedirs(GMM2_PARAMS_CHECKPOINTS_DIR, exist_ok=True)
+    time_suffix = "True" if tune_time_steps else "False"
+    filename = (
+        f"{input_dim}D_gmm2_score_params_{num_steps}steps_{params_index}_{cov_form}"
+        f"_with_time_steps{time_suffix}"
+    )
+    if cov_form == "full" and rank is not None:
+        filename += f"_rank{rank}"
+    filename += ".pth"
+    return GMM2_PARAMS_CHECKPOINTS_DIR / filename
+
+
+def get_gmm2_sample_path(
+    input_dim,
+    num_steps,
+    sample_index,
+    cov_form,
+    direction="backward",
+    rank=None,
+):
+    """Path to stored GMM2 samples (forward/backward)."""
+    direction = direction.lower()
+    if direction not in {"forward", "backward"}:
+        raise ValueError("direction must be 'forward' or 'backward'")
+    base_dir = GMM2_SAMPLE_CHECKPOINTS_DIR / direction
+    os.makedirs(base_dir, exist_ok=True)
+    filename = (
+        f"{input_dim}D_gmm2_{direction}_{num_steps}steps_{sample_index}sample_{cov_form}"
+    )
+    if cov_form == "full" and rank is not None:
+        filename += f"_rank{rank}"
+    filename += ".pkl"
+    return base_dir / filename
+
+
+def get_gmm2_ess_summary_path(input_dim, num_steps, params_indices, rank=None):
+    """Path to cached ESS summaries for GMM2 experiments."""
+    os.makedirs(GMM2_ESS_CHECKPOINTS_DIR, exist_ok=True)
+
+    def _to_string(value):
+        if isinstance(value, (list, tuple)):
+            return "_".join(map(str, value))
+        return str(value)
+
+    steps_str = _to_string(num_steps)
+    params_str = _to_string(params_indices)
+    rank_suffix = f"_rank{rank}" if rank is not None else ""
+    filename = f"ess_results_{input_dim}D_{steps_str}_{params_str}{rank_suffix}.pth"
+    return GMM2_ESS_CHECKPOINTS_DIR / filename

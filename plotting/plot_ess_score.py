@@ -1,269 +1,217 @@
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
 import argparse
-import os
+from pathlib import Path
+from typing import Dict, Iterable, List
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from utils.path_config import CHECKPOINTS_DIR, FIGURES_DIR
 
 
-def calculate_ess(log_w, mode='reverse'):
+def calculate_ess(log_w: torch.Tensor, mode: str = "reverse") -> torch.Tensor:
     num_samples = log_w.shape[0]
-    if mode == 'reverse':
-        # Calculate the reverse SS
-        w = torch.exp(log_w - torch.max(log_w))
-        w = w / torch.sum(w)
-
-        ess = 1 / torch.sum(w ** 2)
-
-    elif mode == 'forward':
-        # calculate the forward ESS
-        Z_inv = torch.mean(torch.exp(-log_w))
-        ess = num_samples ** 2 / (torch.sum(torch.exp(log_w)) * Z_inv)
-
+    if mode == "reverse":
+        weights = torch.exp(log_w - torch.max(log_w))
+        weights = weights / torch.sum(weights)
+        ess = 1 / torch.sum(weights ** 2)
+    elif mode == "forward":
+        z_inv = torch.mean(torch.exp(-log_w))
+        ess = num_samples ** 2 / (torch.sum(torch.exp(log_w)) * z_inv)
+    else:
+        raise ValueError(f"Unknown ESS mode: {mode}")
     return ess
 
-def main():
-    # Define the parser
-    parser = argparse.ArgumentParser(description="Plot the comparison of ESS proportion between our method and DDPM method.")
-    parser.add_argument("--dataset", type=str, default='aldp', help="Dataset to use.")
-    parser.add_argument("--net", type=str, default='egnn', help="Network to use.")
-    parser.add_argument("--model_index", type=int, default=0, help="Index of the model to use.")
-    parser.add_argument("--params_index_list", type=int, nargs="+", help="List of indices of the parameter files to use.")
-    parser.add_argument("--num_steps_list", type=int, nargs="+", help="List of number of steps to use for DDIM.")
 
+def percentile_summary(values: Iterable[float]) -> Dict[str, float]:
+    data = np.array(list(values), dtype=float)
+    return {
+        "q25": np.percentile(data, 25),
+        "q50": np.percentile(data, 50),
+        "q75": np.percentile(data, 75),
+    }
+
+
+def load_checkpoint(path: Path, device: torch.device) -> Dict[str, torch.Tensor]:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing checkpoint: {path}")
+    return torch.load(path, map_location=device)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Compare ESS of tuned diffusion (ours) versus baseline score models."
+    )
+    parser.add_argument("--dataset", type=str, default="aldp", help="Dataset to use.")
+    parser.add_argument("--net", type=str, default="egnn", help="Network backbone.")
+    parser.add_argument("--model-index", type=int, default=0, help="Model checkpoint index.")
+    parser.add_argument(
+        "--params-index-list",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="Indices of tuned parameter checkpoints to include.",
+    )
+    parser.add_argument(
+        "--num-steps-list",
+        type=int,
+        nargs="+",
+        default=[100],
+        help="Diffusion step counts to evaluate.",
+    )
+    parser.add_argument(
+        "--samples-root",
+        type=str,
+        default=None,
+        help="Root directory containing importance sampling results (defaults to checkpoints/samples).")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Optional output path for the figure (defaults to figures/ess).",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize storage for score_new and score samples
-    reverse_ess_score_new_all = {
-        num_steps: {} for num_steps in args.num_steps_list
-    }
+    samples_root = (
+        Path(args.samples_root).expanduser().resolve()
+        if args.samples_root
+        else (CHECKPOINTS_DIR / "importance_sampling" / "samples")
+    )
 
-    forward_ess_score_new_all = {
-        num_steps: {} for num_steps in args.num_steps_list
-    }
+    ours_dir = samples_root / args.dataset / "ours"
+    baseline_dir = samples_root / args.dataset / "score"
 
-    reverse_ess_score_all = {
-        num_steps: {} for num_steps in args.num_steps_list
-    }
-
-    forward_ess_score_all = {
-        num_steps: {} for num_steps in args.num_steps_list
-    }
+    reverse_ours: Dict[int, Dict[int, float]] = {n: {} for n in args.num_steps_list}
+    forward_ours: Dict[int, Dict[int, float]] = {n: {} for n in args.num_steps_list}
+    reverse_baseline: Dict[int, Dict[int, float]] = {n: {} for n in args.num_steps_list}
+    forward_baseline: Dict[int, Dict[int, float]] = {n: {} for n in args.num_steps_list}
 
     for num_steps in args.num_steps_list:
-        for param_index in args.params_index_list:
-
-            # Paths for loading samples
-            score_new_samples_path = (
-                fstr(Path(__file__).parent.parent / 'consistency_sampling/importance_sampling/samples/')
-
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
-                f'{args.dataset}/ours/{args.net}_ours_{args.model_index}model_{num_steps}steps_{param_index}.pth'
+        for params_idx in args.params_index_list:
+            ours_path = (
+                ours_dir
+                / f"{args.net}_ours_{args.model_index}model_{num_steps}steps_{params_idx}.pth"
             )
-            score_new_forward_ess_path = (
-                fstr(Path(__file__).parent.parent / 'consistency_sampling/importance_sampling/samples/')
-
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
-                f'{args.dataset}/ours/{args.net}_ours_forward_{args.model_index}model_{num_steps}steps_{param_index}.pth'
+            ours_forward_path = (
+                ours_dir
+                / f"{args.net}_ours_forward_{args.model_index}model_{num_steps}steps_{params_idx}.pth"
             )
-            score_samples_path = (
-                fstr(Path(__file__).parent.parent / 'consistency_sampling/importance_sampling/samples/')
-
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
-                f'{args.dataset}/score/{args.net}_ddpm_{args.model_index}model_{num_steps}steps_{param_index}.pth'
+            baseline_path = (
+                baseline_dir
+                / f"{args.net}_ddpm_{args.model_index}model_{num_steps}steps_{params_idx}.pth"
             )
-            score_forward_ess_path = (
-                fstr(Path(__file__).parent.parent / 'consistency_sampling/importance_sampling/samples/')
-
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
-                f'{args.dataset}/score/{args.net}_ddpm_forward_{args.model_index}model_{num_steps}steps_{param_index}.pth'
+            baseline_forward_path = (
+                baseline_dir
+                / f"{args.net}_ddpm_forward_{args.model_index}model_{num_steps}steps_{params_idx}.pth"
             )
 
-            # Load checkpoint files
-            score_new_samples_checkpoint = torch.load(score_new_samples_path, map_location=device)
-            score_new_forward_checkpoint = torch.load(score_new_forward_ess_path, map_location=device)
+            ours_ckpt = load_checkpoint(ours_path, device)
+            ours_forward_ckpt = load_checkpoint(ours_forward_path, device)
+            baseline_ckpt = load_checkpoint(baseline_path, device)
+            baseline_forward_ckpt = load_checkpoint(baseline_forward_path, device)
 
-            score_samples_checkpoint = torch.load(score_samples_path, map_location=device)
-            score_forward_checkpoint = torch.load(score_forward_ess_path, map_location=device)
+            reverse_ours_ess = calculate_ess(ours_ckpt["log_weights"], mode="reverse")
+            forward_ours_ess = calculate_ess(ours_forward_ckpt["log_weights"], mode="forward")
+            reverse_baseline_ess = calculate_ess(baseline_ckpt["log_weights"], mode="reverse")
+            forward_baseline_ess = calculate_ess(baseline_forward_ckpt["log_weights"], mode="forward")
 
-            # reverse log weights
-            score_new_log_weights_total_reverse = score_new_samples_checkpoint['log_weights']
-            score_log_weights_total_reverse = score_samples_checkpoint['log_weights']
+            sample_count = ours_ckpt["log_weights"].shape[0]
+            reverse_ours[num_steps][params_idx] = (
+                reverse_ours_ess.detach().cpu().item() / sample_count * 100
+            )
+            forward_ours[num_steps][params_idx] = (
+                forward_ours_ess.detach().cpu().item() / sample_count * 100
+            )
+            reverse_baseline[num_steps][params_idx] = (
+                reverse_baseline_ess.detach().cpu().item() / sample_count * 100
+            )
+            forward_baseline[num_steps][params_idx] = (
+                forward_baseline_ess.detach().cpu().item() / sample_count * 100
+            )
 
-            # forward log weights
-            score_new_log_weights_total_forward = score_new_forward_checkpoint['log_weights']
-            score_log_weights_total_forward = score_forward_checkpoint['log_weights']
+    num_steps_list: List[int] = args.num_steps_list
 
-            # compute ESS
-            score_new_reverse_ess_total = calculate_ess(score_new_log_weights_total_reverse, mode='reverse')
-            score_reverse_ess_total = calculate_ess(score_log_weights_total_reverse, mode='reverse')
+    ours_forward_stats = [percentile_summary(forward_ours[steps].values()) for steps in num_steps_list]
+    ours_reverse_stats = [percentile_summary(reverse_ours[steps].values()) for steps in num_steps_list]
+    baseline_forward_stats = [percentile_summary(forward_baseline[steps].values()) for steps in num_steps_list]
+    baseline_reverse_stats = [percentile_summary(reverse_baseline[steps].values()) for steps in num_steps_list]
 
-            score_new_forward_ess_total = calculate_ess(score_new_log_weights_total_forward, mode='forward')
-            score_forward_ess_total = calculate_ess(score_log_weights_total_forward, mode='forward')
-
-            reverse_ess_score_new_all[num_steps][param_index] = score_new_reverse_ess_total.detach().cpu().numpy() / score_new_log_weights_total_reverse.shape[0] * 100
-            forward_ess_score_new_all[num_steps][param_index] = score_new_forward_ess_total.detach().cpu().numpy() / score_new_log_weights_total_forward.shape[0] * 100
-
-            reverse_ess_score_all[num_steps][param_index] = score_reverse_ess_total.detach().cpu().numpy() / score_log_weights_total_reverse.shape[0] * 100
-            forward_ess_score_all[num_steps][param_index] = score_forward_ess_total.detach().cpu().numpy() / score_log_weights_total_forward.shape[0] * 100
-
-            print("reverse_ess_score_new_all: ", reverse_ess_score_new_all[num_steps][param_index])
-            print("forward_ess_score_new_all: ", forward_ess_score_new_all[num_steps][param_index])
-
-            print("reverse_ess_score_all: ", reverse_ess_score_all[num_steps][param_index])
-            print("forward_ess_score_all: ", forward_ess_score_all[num_steps][param_index])
-
-
-            # Check consistency of data
-            assert score_new_log_weights_total_reverse.shape[0] == score_log_weights_total_reverse.shape[0], "Number of log weights do not match."
-            assert score_new_log_weights_total_forward.shape[0] == score_log_weights_total_forward.shape[0], "Number of log weights do not match."
-
-            # Debugging information
-            print(f"Num steps: {num_steps}, Param index: {param_index}")
-            print(f"Current number of score_new reverse log weights: {score_new_log_weights_total_reverse.shape[0]}")
-            print(f"Current number of Score reverse log weights: {score_log_weights_total_reverse.shape[0]}")
-            print(f"Current number of score_new forward log weights: {score_new_log_weights_total_forward.shape[0]}")
-            print(f"Current number of Score forward log weights: {score_log_weights_total_forward.shape[0]}")
-
-    # Prepare data for plotting
-    num_steps_list = args.num_steps_list
-
-    score_new_reverse_ess_q75 = [np.percentile(list(reverse_ess_score_new_all[steps].values()), 75) for steps in num_steps_list]
-    score_new_reverse_ess_q25 = [np.percentile(list(reverse_ess_score_new_all[steps].values()), 25) for steps in num_steps_list]
-    score_new_reverse_ess_q50 = [np.percentile(list(reverse_ess_score_new_all[steps].values()), 50) for steps in num_steps_list]
-
-    score_new_forward_ess_q75 = [np.percentile(list(forward_ess_score_new_all[steps].values()), 75) for steps in num_steps_list]
-    score_new_forward_ess_q25 = [np.percentile(list(forward_ess_score_new_all[steps].values()), 25) for steps in num_steps_list]
-    score_new_forward_ess_q50 = [np.percentile(list(forward_ess_score_new_all[steps].values()), 50) for steps in num_steps_list]
-
-    score_reverse_ess_q75 = [np.percentile(list(reverse_ess_score_all[steps].values()), 75) for steps in num_steps_list]
-    score_reverse_ess_q25 = [np.percentile(list(reverse_ess_score_all[steps].values()), 25) for steps in num_steps_list]
-    score_reverse_ess_q50 = [np.percentile(list(reverse_ess_score_all[steps].values()), 50) for steps in num_steps_list]
-
-    score_forward_ess_q75 = [np.percentile(list(forward_ess_score_all[steps].values()), 75) for steps in num_steps_list]
-    score_forward_ess_q25 = [np.percentile(list(forward_ess_score_all[steps].values()), 25) for steps in num_steps_list]
-    score_forward_ess_q50 = [np.percentile(list(forward_ess_score_all[steps].values()), 50) for steps in num_steps_list]
-
-    score_new_forward_ess_yerr = np.array([
-        [m - l for m, l in zip(score_new_forward_ess_q50, score_new_forward_ess_q25)],
-        [h - m for h, m in zip(score_new_forward_ess_q75, score_new_forward_ess_q50)]
-    ])
-
-    score_new_reverse_ess_yerr = np.array([
-        [m - l for m, l in zip(score_new_reverse_ess_q50, score_new_reverse_ess_q25)],
-        [h - m for h, m in zip(score_new_reverse_ess_q75, score_new_reverse_ess_q50)]
-    ])
-
-    score_forward_ess_yerr = np.array([
-        [m - l for m, l in zip(score_forward_ess_q50, score_forward_ess_q25)],
-        [h - m for h, m in zip(score_forward_ess_q75, score_forward_ess_q50)]
-    ])
-
-    score_reverse_ess_yerr = np.array([
-        [m - l for m, l in zip(score_reverse_ess_q50, score_reverse_ess_q25)],
-        [h - m for h, m in zip(score_reverse_ess_q75, score_reverse_ess_q50)]
-    ])
-
-    # score_new_ess_mean = [np.mean(list(ess_score_new_all[steps].values())) for steps in num_steps_list]
-    # score_new_ess_std = [np.std(list(ess_score_new_all[steps].values())) for steps in num_steps_list]
-
-    # score_ess_mean = [np.mean(list(ess_score_all[steps].values())) for steps in num_steps_list]
-    # score_ess_std = [np.std(list(ess_score_all[steps].values())) for steps in num_steps_list]
-
-    # Plotting
     plt.figure(figsize=(7, 4))
+    x_values = num_steps_list
 
-    # Number of NFEs (assuming scaling)
-    num_nfe_list = [1 * steps for steps in num_steps_list]
-
-    # Plot error bars
-    plt.errorbar(
-        num_nfe_list,
-        score_new_forward_ess_q50,
-        yerr=score_new_forward_ess_yerr,
-        marker='o',
-        linestyle='-',
-        color='#1f77b4',
-        label='Ours (Forward ESS)',
-        linewidth=2,
-        capsize=3
-    )
+    def as_yerr(stats):
+        lower = [s["q50"] - s["q25"] for s in stats]
+        upper = [s["q75"] - s["q50"] for s in stats]
+        return np.vstack([lower, upper])
 
     plt.errorbar(
-        num_nfe_list,
-        score_new_reverse_ess_q50,
-        yerr=score_new_reverse_ess_yerr,
-        marker='o',
-        linestyle='-',
-        color='#76b7b2',
-        label='Ours (Reverse ESS)',
+        x_values,
+        [s["q50"] for s in ours_forward_stats],
+        yerr=as_yerr(ours_forward_stats),
+        marker="o",
+        linestyle="-",
+        color="#1f77b4",
+        label="Ours (Forward ESS)",
         linewidth=2,
-        capsize=3
+        capsize=3,
     )
-
     plt.errorbar(
-        num_nfe_list,
-        score_forward_ess_q50,
-        yerr=score_forward_ess_yerr,
-        marker='o',
-        linestyle='-',
-        color='#d62728',
-        label='DDPM (Forward ESS)',
+        x_values,
+        [s["q50"] for s in ours_reverse_stats],
+        yerr=as_yerr(ours_reverse_stats),
+        marker="o",
+        linestyle="-",
+        color="#76b7b2",
+        label="Ours (Reverse ESS)",
         linewidth=2,
-        capsize=3
+        capsize=3,
     )
-
     plt.errorbar(
-        num_nfe_list,
-        score_reverse_ess_q50,
-        yerr=score_reverse_ess_yerr,
-        marker='o',
-        linestyle='-',
-        color='#ff9896',
-        label='DDPM (Reverse ESS)',
+        x_values,
+        [s["q50"] for s in baseline_forward_stats],
+        yerr=as_yerr(baseline_forward_stats),
+        marker="s",
+        linestyle="--",
+        color="#d62728",
+        label="DDPM (Forward ESS)",
         linewidth=2,
-        capsize=3
+        capsize=3,
+    )
+    plt.errorbar(
+        x_values,
+        [s["q50"] for s in baseline_reverse_stats],
+        yerr=as_yerr(baseline_reverse_stats),
+        marker="s",
+        linestyle="--",
+        color="#ff9896",
+        label="DDPM (Reverse ESS)",
+        linewidth=2,
+        capsize=3,
     )
 
-    plt.xlabel('NFE', fontsize=11)
-    plt.ylabel('ESS (%)', fontsize=11)
-    plt.legend(fontsize=11)
-    plt.xticks(fontsize=11)
-    plt.yticks(fontsize=11)
-    plt.grid(True)
+    plt.xlabel("Number of diffusion steps")
+    plt.ylabel("ESS (%)")
+    plt.title(f"ESS comparison on {args.dataset.upper()} ({args.net})")
+    plt.grid(alpha=0.3)
+    plt.legend()
     plt.tight_layout()
 
-    # Save and show the plot
-    save_path = (
-        f"/rds/user/fz287/hpc-work/dissertation/consistency_sampling/figures/ess/{args.dataset}/"
-        f"{args.dataset}_our_ddpm_compare_{args.model_index}.pdf"
-    )
-    plt.savefig(save_path, format='pdf', bbox_inches='tight')
-    plt.show()
+    if args.output is None:
+        output_dir = FIGURES_DIR / "ess"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        steps_str = "_".join(map(str, num_steps_list))
+        params_str = "_".join(map(str, args.params_index_list))
+        output_path = output_dir / (
+            f"ess_plot_{args.dataset}_{args.net}_{steps_str}steps_{params_str}params.pdf"
+        )
+    else:
+        output_path = Path(args.output).expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create the output directory
-    figures_dir = FIGURES_DIR / "ess" / args.dataset
-    os.makedirs(figures_dir, exist_ok=True)
-    
-    # Save the figure
-    plt.tight_layout()
-    save_path = figures_dir / f"ess_comparison_{args.dataset}.pdf"
-    plt.savefig(save_path, format='pdf', bbox_inches='tight')
-    print(f"Figure saved to {save_path}")
-    
+    plt.savefig(output_path, bbox_inches="tight")
+    print(f"Figure saved to {output_path}")
     plt.close()
 
 

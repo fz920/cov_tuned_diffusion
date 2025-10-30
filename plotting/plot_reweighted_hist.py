@@ -1,13 +1,13 @@
-import torch
 import argparse
-import os
-import yaml
-import matplotlib.pyplot as plt
 import pickle
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import torch
 
 from training_utils import load_target_dist, load_dataset
-
 from tqdm import tqdm
+from utils.path_config import CHECKPOINTS_DIR, FIGURES_DIR
 
 def main():
     parser = argparse.ArgumentParser()
@@ -45,11 +45,11 @@ def main():
         indices_str = f"index_{args.sample_indices[0]}"
 
     # Path for saved energy file
-    energy_dir = CHECKPOINTS_DIR / 'energy/{args.dataset}'
-    energy_file = f'{energy_dir}/{args.cov_form}_{args.num_steps}steps_{indices_str}.pkl'
+    energy_dir = CHECKPOINTS_DIR / 'energy' / args.dataset
+    energy_file = energy_dir / f'{args.cov_form}_{args.num_steps}steps_{indices_str}.pkl'
 
     # Check if we should use saved energy values
-    if args.use_saved_energy and os.path.exists(energy_file):
+    if args.use_saved_energy and energy_file.exists():
         print(f"Loading precomputed energy values from {energy_file}")
         with open(energy_file, 'rb') as f:
             energy_data = pickle.load(f)
@@ -78,18 +78,18 @@ def main():
         
     else:
         # If not using saved energy or file doesn't exist, compute energies
-        if args.use_saved_energy and not os.path.exists(energy_file):
+        if args.use_saved_energy and not energy_file.exists():
             print(f"Warning: Requested to use saved energy file {energy_file} but it doesn't exist. Computing energies instead.")
         
         # Define sample paths
-        samples_base_path = CHECKPOINTS_DIR / 'samples' / '{args.dataset}'
+        samples_base_path = CHECKPOINTS_DIR / 'samples' / args.dataset
         
         # Load and combine samples from multiple files
         all_samples = []
         all_log_weights = []
 
         for sample_idx in args.sample_indices:
-            backward_pkl_path = os.path.join(samples_base_path, 'backward', f'{args.num_steps}steps_{sample_idx}sample.pkl')
+            backward_pkl_path = samples_base_path / 'backward' / f'{args.num_steps}steps_{sample_idx}sample.pkl'
             
             # Load samples and weights
             with open(backward_pkl_path, 'rb') as f:
@@ -118,10 +118,6 @@ def main():
 
         # normalize the importance weights
 
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
         w = torch.exp(log_w - log_w.max())
         w = w / w.sum()
 
@@ -161,7 +157,7 @@ from utils.path_config import (
             # Save energy values to file if requested
             if args.save_energy:
                 # Create energy directory if it doesn't exist
-                os.makedirs(energy_dir, exist_ok=True)
+                energy_dir.mkdir(parents=True, exist_ok=True)
                 
                 # Save model and true energy values along with weights
                 energy_data = {
@@ -246,15 +242,15 @@ from utils.path_config import (
 
     # Create figures directory if it doesn't exist
     figures_dir = FIGURES_DIR / 'hist'
-    os.makedirs(figures_dir, exist_ok=True)
+    figures_dir.mkdir(parents=True, exist_ok=True)
 
     # Save figure with the sample indices in the filename
-    plt.savefig(f'{figures_dir}/{args.dataset}_{args.cov_form}_reweight_{args.num_steps}steps_{indices_str}.pdf', 
-                format='pdf', bbox_inches='tight', dpi=300)
-    
+    pdf_path = figures_dir / f'{args.dataset}_{args.cov_form}_reweight_{args.num_steps}steps_{indices_str}.pdf'
+    png_path = figures_dir / f'{args.dataset}_{args.cov_form}_reweight_{args.num_steps}steps_{indices_str}.png'
+    plt.savefig(pdf_path, format='pdf', bbox_inches='tight', dpi=300)
+
     # Also save a high-resolution PNG version
-    plt.savefig(f'{figures_dir}/{args.dataset}_{args.cov_form}_reweight_{args.num_steps}steps_{indices_str}.png', 
-                format='png', bbox_inches='tight', dpi=600)
+    plt.savefig(png_path, format='png', bbox_inches='tight', dpi=600)
     
     plt.close()
 

@@ -19,7 +19,7 @@ This repository implements our proposed sampling methods for score-based generat
 ```bash
 # Clone the repository
 git clone [repository-url]
-cd tuned_cov_sampling_neurips
+cd cov_tuned_diffusion
 
 # Install required dependencies
 pip install -r requirements.txt

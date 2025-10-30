@@ -1,30 +1,35 @@
-import torch
-
 import argparse
-import os
+from pathlib import Path
+
+import numpy as np
+import torch
+from tqdm import tqdm
 
 from score_model import ScoreNet
 from gmm import create_gmm
-import numpy as np
-from tqdm import tqdm
 
 from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
+    get_gmm2_ess_summary_path,
+    get_gmm2_model_checkpoint_path,
+    get_gmm2_params_checkpoint_path,
 )
+
+
 def load_covariance_params(args, cov_form, idx, num_steps):
     """
     Load covariance parameters for a specific form
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    if cov_form == 'full':
-        filename = f"/rds/user/fz287/hpc-work/dissertation/checkpoints/gmm2_checkpoints/params_checkpoints/{args.input_dim}D_gmm2_score_params_{num_steps}steps_{idx}_{cov_form}_with_time_steps{args.tune_time_steps}_rank{args.rank}.pth"
-    else:
-        filename = f"/rds/user/fz287/hpc-work/dissertation/checkpoints/gmm2_checkpoints/params_checkpoints/{args.input_dim}D_gmm2_score_params_{num_steps}steps_{idx}_{cov_form}_with_time_steps{args.tune_time_steps}.pth"
-
-    checkpoint = torch.load(filename, map_location=device)
-    return checkpoint
+    params_path = get_gmm2_params_checkpoint_path(
+        input_dim=args.input_dim,
+        num_steps=num_steps,
+        params_index=idx,
+        cov_form=cov_form,
+        tune_time_steps=args.tune_time_steps,
+        rank=args.rank if cov_form == "full" else None,
+    )
+    return torch.load(params_path, map_location=device)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -46,14 +51,25 @@ def main():
     args.cov_forms = ['isotropic', 'diagonal', 'full', 'ddpm']
 
     if args.save_path is None:
-        args.save_path = fstr(Path(__file__).parent.parent / 'consistency_sampling/gmm2_experiments/ess_checkpoints/ess_results_{args.input_dim}D_{args.num_steps}step_rank{args.rank}_summary.txt')
+        default_summary = get_gmm2_ess_summary_path(
+            input_dim=args.input_dim,
+            num_steps=args.num_steps,
+            params_indices=args.params_index_list,
+            rank=args.rank,
+        ).with_suffix(".txt")
+        save_path = default_summary
+    else:
+        save_path = Path(args.save_path).expanduser().resolve()
 
-    # check if the summary file exists
-    os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    args.save_path = save_path
 
     # load the score model
     score_model = ScoreNet(input_dim=args.input_dim, n_layers=7, hidden_size=512).to(device)
-    score_model.load_state_dict(torch.load(CHECKPOINTS_DIR / 'gmm2_checkpoints/model_checkpoints/{args.input_dim}D_gmm2_score_ckpt_7layers_512hidden_size.pth', map_location=device))
+    score_ckpt_path = get_gmm2_model_checkpoint_path(
+        input_dim=args.input_dim, n_layers=7, hidden_size=512
+    )
+    score_model.load_state_dict(torch.load(score_ckpt_path, map_location=device))
     score_model.eval()
     score_model.requires_grad_(False)
 

@@ -5,10 +5,7 @@ from tqdm import tqdm
 
 from gmm import create_gmm
 
-from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
-)
+from utils.path_config import get_gmm2_model_checkpoint_path
 
 def main():
     parser = argparse.ArgumentParser()
@@ -66,8 +63,13 @@ def main():
         for param, param_online in zip(score_model.parameters(), score_model_online.parameters()):
             param.data = args.mu * param.data + (1 - args.mu) * param_online.data
 
-        if (e+1) % args.save_freq == 0 or e == args.num_epochs - 1:
-            torch.save(score_model.state_dict(), fstr(Path(__file__).parent.parent / 'gmm2_experiments/score/checkpoints/{args.input_dim}D_gmm2_score_ckpt_{args.n_layers}layers_{args.hidden_size}hidden_size.pth'))
+        if (e + 1) % args.save_freq == 0 or e == args.num_epochs - 1:
+            checkpoint_path = get_gmm2_model_checkpoint_path(
+                input_dim=args.input_dim,
+                n_layers=args.n_layers,
+                hidden_size=args.hidden_size,
+            )
+            torch.save(score_model.state_dict(), checkpoint_path)
 
 if __name__ == '__main__':
     main()

@@ -1,16 +1,18 @@
-import torch
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import numpy as np
 import argparse
-import os
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
 from score_model import ScoreNet
 from gmm import create_gmm
 
 from utils.path_config import (
-    get_config_path, get_model_checkpoint_path, get_params_checkpoint_path,
-    get_sample_path, get_figure_path, FIGURES_DIR, CHECKPOINTS_DIR
+    FIGURES_DIR,
+    get_gmm2_ess_summary_path,
+    get_gmm2_model_checkpoint_path,
+    get_gmm2_params_checkpoint_path,
 )
 
 def load_covariance_params(args, cov_form, idx, num_steps):
@@ -19,13 +21,15 @@ def load_covariance_params(args, cov_form, idx, num_steps):
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    if cov_form == 'full':
-        filename = f"/rds/user/fz287/hpc-work/dissertation/checkpoints/gmm2_checkpoints/params_checkpoints/{args.input_dim}D_gmm2_score_params_{num_steps}steps_{idx}_{cov_form}_with_time_steps{args.tune_time_steps}_rank{args.rank}.pth"
-    else:
-        filename = f"/rds/user/fz287/hpc-work/dissertation/checkpoints/gmm2_checkpoints/params_checkpoints/{args.input_dim}D_gmm2_score_params_{num_steps}steps_{idx}_{cov_form}_with_time_steps{args.tune_time_steps}.pth"
-
-    checkpoint = torch.load(filename, map_location=device)
-    return checkpoint
+    params_path = get_gmm2_params_checkpoint_path(
+        input_dim=args.input_dim,
+        num_steps=num_steps,
+        params_index=idx,
+        cov_form=cov_form,
+        tune_time_steps=args.tune_time_steps,
+        rank=args.rank if cov_form == "full" else None,
+    )
+    return torch.load(params_path, map_location=device)
 
 
 def compute_ess(args):
@@ -36,7 +40,10 @@ def compute_ess(args):
     
     # Load the score model
     score_model = ScoreNet(input_dim=args.input_dim, n_layers=7, hidden_size=512).to(device)
-    score_model.load_state_dict(torch.load(CHECKPOINTS_DIR / 'gmm2_checkpoints/model_checkpoints/{args.input_dim}D_gmm2_score_ckpt_7layers_512hidden_size.pth', map_location=device))
+    score_ckpt_path = get_gmm2_model_checkpoint_path(
+        input_dim=args.input_dim, n_layers=7, hidden_size=512
+    )
+    score_model.load_state_dict(torch.load(score_ckpt_path, map_location=device))
     score_model.eval()
     score_model.requires_grad_(False)
 
@@ -119,14 +126,17 @@ def compute_ess(args):
         summary_reverse_ess[cov_form] = {"median": median, "p25": p25, "p75": p75, "mean": mean, "std": std}
 
     # save both summaries to file
-    steps_str = "_".join(map(str, args.num_steps_list))
-    params_str = "_".join(map(str, args.params_index_list))
-    filename = CHECKPOINTS_DIR / 'gmm2_checkpoints/ess_checkpoints/ess_results_{args.input_dim}D_{steps_str}_{params_str}_rank{args.rank}.pth'
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    summary_path = get_gmm2_ess_summary_path(
+        input_dim=args.input_dim,
+        num_steps=args.num_steps_list,
+        params_indices=args.params_index_list,
+        rank=args.rank,
+    )
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
         'forward_ess': summary_forward_ess,
         'reverse_ess': summary_reverse_ess
-    }, filename)
+    }, summary_path)
 
     return summary_forward_ess, summary_reverse_ess
 
@@ -156,7 +166,8 @@ def plot_ess(all_summaries, args):
     }
 
     markers = {'ddpm': 'd', 'isotropic': 'o', 'diagonal': 's', 'full': '^'}
-    labels = {'ddpm': 'DDPM', 'isotropic': 'Isotropic', 'diagonal': 'Diagonal', 'full': f'Full (rank {args.rank})'}
+    full_label = 'Full' + (f' (rank {args.rank})' if args.rank is not None else '')
+    labels = {'ddpm': 'DDPM', 'isotropic': 'Isotropic', 'diagonal': 'Diagonal', 'full': full_label}
     linestyles = {'forward': '-', 'reverse': '--'}
     
     # Keep track of handles and labels for the legend
@@ -273,7 +284,12 @@ def main():
 
     if args.save_path is None:
         dims_str = '_'.join(map(str, args.input_dims))
-        args.save_path = FIGURES_DIR / 'ess_plot_{dims_str}D.pdf'
+        figures_dir = FIGURES_DIR / 'gmm2' / 'ess'
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        args.save_path = figures_dir / f'ess_plot_{dims_str}D.pdf'
+    else:
+        args.save_path = Path(args.save_path).expanduser().resolve()
+        args.save_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Dictionary to store summaries for all dimensions
     all_summaries = {}
@@ -283,12 +299,14 @@ def main():
         # Temporarily set input_dim in args for compute_ess
         args.input_dim = input_dim
         
-        # check if the summary file exists
-        steps_str = "_".join(map(str, args.num_steps_list))
-        params_str = "_".join(map(str, args.params_index_list))
-        summary_file_path = CHECKPOINTS_DIR / 'gmm2_checkpoints/ess_checkpoints/ess_results_{input_dim}D_{steps_str}_{params_str}_rank{args.rank}.pth'
-        
-        if os.path.exists(summary_file_path):
+        summary_file_path = get_gmm2_ess_summary_path(
+            input_dim=input_dim,
+            num_steps=args.num_steps_list,
+            params_indices=args.params_index_list,
+            rank=args.rank,
+        )
+
+        if summary_file_path.exists():
             print(f"Loading existing summary from {summary_file_path}")
             ess_checkpoints = torch.load(summary_file_path)
             summary_forward_ess = ess_checkpoints['forward_ess']
