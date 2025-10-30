@@ -1,106 +1,198 @@
 # Variance-Tuned Diffusion Importance Sampling
 
-A framework for improved score-based generative model sampling via tuned covariance.
+**Implementation for the TMLR paper**  
+*Efficient and Unbiased Sampling from Boltzmann Distributions via Variance-Tuned Diffusion Models* (OpenReview: [https://openreview.net/forum?id=Jq2dcMCS5R](https://openreview.net/forum?id=Jq2dcMCS5R))
 
-## Overview
+This repository delivers an end-to-end workflow for training score-based diffusion models, tuning variance or covariance schedules, and drawing unbiased importance-sampling estimates. It covers molecular systems (Alanine dipeptide, Lennard-Jones) and synthetic Gaussian mixture model (GMM) benchmarks, and includes plotting utilities that reproduce the results reported in the paper.
 
-This repository implements our proposed sampling methods for score-based generative models, focusing on improving the effective sample size (ESS) and sampling efficiency.
+> **At a glance**
+>
+> 1. Train score models → tune noise schedules → sample with reweighting → evaluate ESS and downstream metrics.
+> 2. All scripts use `utils/path_config.py`, so datasets, checkpoints, and figures land in predictable locations.
+
+---
+
+## Table of Contents
+
+* [Features](#features)
+* [Installation](#installation)
+* [Repository Layout & Paths](#repository-layout--paths)
+* [Quickstart](#quickstart)
+* [Reproducing Paper Figures](#reproducing-paper-figures)
+* [Data & Configuration Notes](#data--configuration-notes)
+* [Outputs & Logging](#outputs--logging)
+* [Contributing](#contributing)
+* [Citation](#citation)
+* [License](#license)
+* [Troubleshooting](#troubleshooting)
+
+---
 
 ## Features
 
-- Score-based generative model training with various architectures (EGNN, etc.)
-- Advanced sampling techniques with improved ESS
-- Support for multiple datasets including DW-4, LJ-13 and Alanine Dipeptide
-- Parameter tuning for optimized sampling performance
-- Visualization tools for analyzing results and sampling quality
+* Unified pipeline for training, variance tuning, sampling with reweighting, and plotting.
+* Centralized path management (`utils/path_config.py`) keeps experiments organized across machines.
+* Ready-made experiment modules for molecular systems and synthetic GMM benchmarks.
+* Reproducibility aids such as consistent directory structure and figure scripts.
+
+For a walkthrough of the code and data flow, see `docs/structure.md`.
+
+---
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone [repository-url]
+git clone <your-repository-url>
 cd cov_tuned_diffusion
 
-# Install required dependencies
+# Create and activate a Python environment (Python ≥ 3.9)
+python -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Directory Structure
+GPU acceleration is optional but recommended for training; exact package versions are listed in `requirements.txt`.
 
-- `model/`: Neural network architectures and model components
-  - `diffusion.py`: Score-based diffusion models
-  - `egnn.py`: E(n) Equivariant Graph Neural Networks
-  - `flows/`: Normalizing flow models
-  - `configs/`: Model configuration files
-- `target_dist/`: Target distribution implementations
-- `utils/`: Utility functions and configurations
-  - `path_config.py`: Central path configuration system
-- `figures/`: Generated plots and visualizations
-- Various scripts for training, sampling, and evaluation
+---
 
-## Path Configuration
+## Repository Layout & Paths
 
-The codebase uses a centralized path configuration system in `utils/path_config.py` to manage all file paths. This makes it easy to:
-
-1. Configure all paths from a single location
-2. Automatically create necessary directories
-3. Maintain consistent path structures across all scripts
-
-All data, model checkpoints, and output files are organized as follows:
+All scripts rely on the directory skeleton managed by `utils/path_config.py`. On first run, it creates:
 
 ```
 checkpoints/
-├── dataset/            # Dataset files
-├── model_checkpoints/  # Trained model weights
-├── params_checkpoints/ # Parameter tuning results
-├── samples/            # Generated samples
-└── ...
+├── dataset/                 # Cached datasets
+├── gmm2_checkpoints/        # GMM checkpoints, tuned params, ESS summaries
+├── model_checkpoints/       # Score-model weights
+├── params_checkpoints*/     # Tuned covariance/time-step parameters
+└── samples*/                # Diffusion trajectories and final samples
+figures/
+└── ...                      # Plots and tables
 ```
 
-## Usage
+`*` marks subfolders created per dataset or run. To store artifacts elsewhere, set `COV_TUNED_BASE=/path/to/workdir`. Defaults work for both local and HPC deployments.
 
-### Training a Score Model
+---
 
-```bash
-python score_training.py --dataset dw4 --net egnn --num_epochs 10000 --train_num_samples 2000
-```
+## Quickstart
 
-### Parameter Tuning
+1. **Prepare data.** Export raw datasets to `checkpoints/dataset/`. For GMM experiments, place pretrained score checkpoints in `checkpoints/gmm2_checkpoints/model_checkpoints/` (see `docs/structure.md` for filenames).
+2. **Train score models.**
+   ```bash
+   python score_training.py --dataset dw4 --net egnn \
+       --num_epochs 10000 --train_num_samples 2000
+   ```
+   Models are saved via `get_model_checkpoint_path(...)`.
+3. **Tune covariance/time-step schedules.**
+   ```bash
+   python tune_var/params_tuning_score_full.py \
+       --dataset dw4 --net egnn --num_steps 100 --params_index 0
+   ```
+   GMM-specific tuning lives in `gmm2_experiments/tune_params_score.py`.
+4. **Sample with tuned parameters.**
+   ```bash
+   python sample_score.py --dataset dw4 --net egnn \
+       --model_index 0 --params_index 0 --num_steps 100 --num_samples 5000
+   ```
+5. **Evaluate and plot.**
+   ```bash
+   python plotting/plot_ess_score.py --dataset dw4 --net egnn \
+       --model-index 0 --params-index-list 0 --num-steps-list 50 100
 
-```bash
-python params_tuning_score.py --dataset dw4 --net egnn --model_index 0 --num_steps 100
-```
+   python plotting/plot_reweighted_hist.py --dataset aldp --net egnn
+   ```
 
-### Sampling
+Each script provides `--help` for the complete argument list and writes outputs through the shared path helpers.
 
-```bash
-python sample_score.py --dataset dw4 --net egnn --params_index 0 --model_index 0 --num_samples 5000 --num_steps 100
-```
+---
 
-### Evaluating Effective Sample Size (ESS)
+## Reproducing Paper Figures
 
-```bash
-python forward_ess_score.py --dataset aldp --net egnn --params_index 0 --model_index 0
-```
+* **ESS comparisons (score models)**
+  ```bash
+  python plotting/plot_ess_score.py --dataset dw4 --net egnn \
+      --model-index 0 --params-index-list 0 --num-steps-list 50 100
+  ```
+* **Reweighted histograms (Alanine dipeptide)**
+  ```bash
+  python plotting/plot_reweighted_hist.py --dataset aldp --net egnn
+  ```
+* **GMM benchmarks**
+  ```bash
+  python gmm2_experiments/compute_ess.py
+  python gmm2_experiments/plot_ess.py
+  python gmm2_experiments/plot_gmm_hist.py
+  python gmm2_experiments/plot_var.py
+  ```
+* **α-sweep analyses (molecular systems)**
+  ```bash
+  python plotting/plot_klalpha_ess.py
+  ```
 
-### Visualizing Results
+Dataset names, checkpoint indices, and parameter IDs depend on the run; refer to `docs/structure.md` for naming conventions.
 
-```bash
-python plot_ess_score.py --dataset aldp --net egnn
-python plot_reweighted_hist.py --dataset aldp --net egnn
-```
+---
+
+## Data & Configuration Notes
+
+* **Model configs:** stored in `model/configs/` and accessed via `get_config_path(dataset, net, type="score")`.
+* **Alanine dipeptide:** utilities live under `target_dist/aldp_*`; a low-rank tuner is available in `tune_var/params_tuning_score_full_aldp.py`.
+* **GMM benchmarks:** standalone score networks sit in `gmm2_experiments/score_model.py`; checkpoints, tuned parameters, and ESS summaries are under `checkpoints/gmm2_checkpoints/`.
+
+---
+
+## Outputs & Logging
+
+* **Model weights:** `checkpoints/model_checkpoints/…`
+* **Tuned schedules:** `checkpoints/params_checkpoints*/…`
+* **Samples and trajectories:** `checkpoints/samples*/…`
+* **Figures and tables:** `figures/…` (PNG/PDF)
+* **Console logs:** stream to stdout; redirect if needed:
+  ```bash
+  python sample_score.py ... | tee logs/sample_dw4_egnn.txt
+  ```
+
+For large runs or HPC jobs, set `COV_TUNED_BASE` to a high-throughput filesystem such as `$SLURM_TMPDIR` or scratch space.
+
+---
+
+<!-- ## Contributing
+
+Contributions are welcome. Please open an issue or pull request if you spot discrepancies with the paper or want to extend the experiment suite. Route filesystem interactions through `utils/path_config.py` to keep the layout consistent.
+
+--- -->
 
 ## Citation
 
-```
-@inproceedings{anonymous2024efficient,
-  title={Efficient and Unbiased Sampling from Boltzmann Distributions via Variance-Tuned Diffusion Models},
-  author={Anonymous},
-  booktitle={Submitted to NeurIPS 2025},
-  year={2025}
+If you use this codebase, please cite:
+
+```bibtex
+@article{zhang2025efficient,
+  title   = {Efficient and Unbiased Sampling from Boltzmann Distributions via Variance-Tuned Diffusion Models},
+  author  = {Zhang, Fengzhe and Midgley, Laurence I. and Hern{\'a}ndez-Lobato, Jos{\'e} Miguel},
+  journal = {Transactions on Machine Learning Research (TMLR)},
+  year    = {2025},
+  url     = {https://openreview.net/forum?id=Jq2dcMCS5R}
 }
 ```
 
+The final camera-ready manuscript and supplementary material are available on the TMLR OpenReview page.
+
+---
+
 ## License
 
-[MIT License](LICENSE)
+This project is released under the [MIT License](LICENSE).
+
+<!-- --- -->
+
+<!-- ## Troubleshooting -->
+
+<!-- * **Unexpected paths or missing files:** verify `COV_TUNED_BASE` (if set) and inspect the auto-generated `checkpoints/` and `figures/` folders.
+* **Flag style confusion:** some scripts use `--flag_name`, others use `--flag-name`; follow the style shown in each script’s `--help`.
+* **Dataset lookup errors:** confirm `checkpoints/dataset/` contains the expected exports (see `docs/structure.md`).
+* **Long runtimes or out-of-memory:** lower `--num_steps`, batch sizes, or sample counts; use a GPU when available. -->
