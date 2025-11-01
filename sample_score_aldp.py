@@ -8,7 +8,7 @@ import pickle
 
 from tqdm import tqdm
 
-from model import ScoreNet, compute_forward_ess, compute_reverse_ess, CovNet
+from model import ScoreNet, compute_forward_ess, compute_reverse_ess
 
 from training_utils import load_target_dist, load_dataset
 import logging

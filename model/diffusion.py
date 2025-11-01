@@ -626,63 +626,6 @@ class ScoreNet(nn.Module):
 
         return alpha_div, forward_ess, log_w
 
-    # def est_forward_ess(self, x0, log_prob_x0, num_steps, time_steps=None,
-    #                     nus=None, progress_bar=True, alpha=2, tune_time_steps=False):
-    #     eps, T = self.eps, self.T
-
-    #     # geometric spacing
-    #     if time_steps is None:
-    #         time_steps = torch.tensor(np.geomspace(eps, T, num_steps), dtype=torch.float32).to(self.device)
-
-    #     x = x0.clone() * self.normalizing_constant
-    #     y = x.clone()
-    #     log_w = log_prob_x0.clone()
-
-    #     num_samples = x0.shape[0]
-
-    #     if progress_bar:
-    #         bar = tqdm(range(len(time_steps)-1), desc='Forward ESS Progress')
-    #     else:
-    #         bar = range(len(time_steps)-1)
-    #     for n in bar:
-    #         tn = time_steps[n]
-    #         tn1 = time_steps[n+1]
-
-    #         sigma2_tar = tn1 ** 2 - tn ** 2
-
-    #         x = x + sample_center_gravity_zero_gaussian(x.shape, device=self.device) * sigma2_tar ** 0.5
-    #         log_w += center_gravity_zero_gaussian_log_likelihood(y, sigma2_tar, x)
-
-    #         hat_x0 = self.forward(x, tn1 * torch.ones(num_samples, device=self.device))
-
-    #         sigma2 = (tn ** 2 * (tn1 ** 2 - tn ** 2)) / tn1 ** 2
-    #         if nus is not None:
-    #             nu = nus[n]
-    #             # sigma2 = (1 - nu) * sigma2_tar + nu * sigma2
-    #             sigma2 = nu * sigma2
-
-    #         mu = (tn / tn1) ** 2 * x + (1 - (tn / tn1) ** 2) * hat_x0
-
-    #         log_w -= center_gravity_zero_gaussian_log_likelihood(mu, sigma2, y)
-    #         y = x.clone()
-
-    #     log_w -= center_gravity_zero_gaussian_log_likelihood(torch.zeros_like(x, device=self.device),
-    #                                                             time_steps[-1] ** 2, x)
-
-    #     # alpha divergence
-    #     if alpha == 1:
-    #         alpha_div = torch.mean(log_w)
-    #     else:
-    #         alpha_div = torch.logsumexp(log_w*(alpha-1), dim=0)
-
-    #     # compute forward ess
-    #     # Z_inv = torch.mean(torch.exp(-log_w))
-    #     # forward_ess = num_samples ** 2 / (torch.sum(torch.exp(log_w)) * Z_inv)
-    #     with torch.no_grad():
-    #         forward_ess = compute_forward_ess(log_w)
-
-    #     return alpha_div, forward_ess, log_w
-
     def forward_ess_model(self, x0, log_prob_x0, num_steps, eps=0.002, T=80.0,
                          alpha=2, time_steps=None, cov_model=None, progress_bar=False,
                          lams=None, output_scale=None, diag=False):
