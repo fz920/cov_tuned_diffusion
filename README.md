@@ -1,58 +1,52 @@
 # Variance-Tuned Diffusion Importance Sampling
 
-**Implementation for the TMLR paper**  
-*Efficient and Unbiased Sampling from Boltzmann Distributions via Variance-Tuned Diffusion Models* (OpenReview: [https://openreview.net/forum?id=Jq2dcMCS5R](https://openreview.net/forum?id=Jq2dcMCS5R))
+Implementation for the TMLR paper *Efficient and Unbiased Sampling from Boltzmann Distributions via Variance-Tuned Diffusion Models* ([OpenReview](https://openreview.net/forum?id=Jq2dcMCS5R)).
 
-> **At a glance**
->
-> 1. Train score models → tune noise schedules → sample with reweighting → evaluate ESS and downstream metrics.
-> 2. All scripts use `cov_tuned_diffusion/utils/path_config.py`, so datasets, checkpoints, and figures land in predictable locations.
+> **Workflow:** train score models → tune covariances/time steps → sample with reweighting → report ESS & downstream metrics.  
+> All scripts rely on `cov_tuned_diffusion/utils/path_config.py`, so datasets, checkpoints, and figures land in predictable folders (override with `COV_TUNED_BASE` if desired).
 
 ---
 
-## Installation
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone <your-repository-url>
+git clone <repo-url>
 cd cov_tuned_diffusion
-
-# Create and activate a Python environment (Python ≥ 3.9)
-python -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
+python -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e .
 ```
 
+See `requirements.txt` for optional extras (OpenMM, bgflow, etc.).
+
 ---
 
-## Reproducing Paper Figures
+## Experiment Guides
 
-* **ESS comparisons (score models)**
-  ```bash
-  python -m cov_tuned_diffusion.analysis.plotting.plot_ess_score --dataset dw4 --net egnn \
-      --model-index 0 --params-index-list 0 --num-steps-list 50 100
-  ```
-* **Reweighted histograms (Alanine dipeptide)**
-  ```bash
-  python -m cov_tuned_diffusion.analysis.plotting.plot_reweighted_hist --dataset aldp --net egnn
-  ```
-* **GMM benchmarks**
-  ```bash
-  python examples/gmm/compute_ess.py
-  python examples/gmm/plot_ess.py
-  python examples/gmm/plot_gmm_hist.py
-  python examples/gmm/plot_var.py
-  ```
-* **α-sweep analyses (molecular systems)**
-  ```bash
-  python -m cov_tuned_diffusion.analysis.plotting.plot_klalpha_ess
-  ```
+- **Molecular systems (ALDP, LJ13/55, DW4):** `examples/molecules/README.md`
+- **Synthetic GMM benchmarks:** `examples/gmm/README.md`
+- **Analysis/figure scripts:** `src/analysis/plotting/` (commands listed in each module)
 
-Dataset names, checkpoint indices, and parameter IDs depend on the run; refer to `docs/structure.md` for naming conventions.
+Each README details the end-to-end pipeline (training → tuning → sampling → plotting) and the relevant CLI flags.
+
+---
+
+## Common Figure Commands
+
+```bash
+# Score-model ESS curves
+python -m cov_tuned_diffusion.analysis.plotting.plot_ess_score \
+  --dataset dw4 --net egnn --model-index 0 --params-index-list 0 --num-steps-list 50 100
+
+# Reweighted histograms (ALDP)
+python -m cov_tuned_diffusion.analysis.plotting.plot_reweighted_hist --dataset aldp --net egnn
+
+# α-sweep analyses (molecules)
+python -m cov_tuned_diffusion.analysis.plotting.plot_klalpha_ess
+```
+
+For GMM visuals, run the scripts documented in `examples/gmm/README.md`.
 
 ---
 

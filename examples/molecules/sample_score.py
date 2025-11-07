@@ -106,7 +106,7 @@ def _load_model_and_target(args) -> Tuple[ScoreNet, Any]:
     score_model.requires_grad_(False)
 
     # Target
-    _, true_target = load_target_dist(args.dataset, device=device)
+    true_target = load_target_dist(args.dataset, device=device)
 
     return score_model, true_target
 
@@ -338,7 +338,7 @@ def main():
         total_samples = 0
 
         # Load tuning ckpt (if any)
-        ckpt = _load_covariance_params(args, cov_form, args.model_index, args.num_steps, diag=args.diag, tune_time_steps=args.tune_time_steps) \
+        ckpt = _load_covariance_params(args, cov_form, args.params_index, args.num_steps, diag=args.diag, tune_time_steps=args.tune_time_steps) \
                if cov_form != "ddpm" else {"cov_form":"ddpm"}
 
         # Extract time_steps / nus / cov_mat_all if available

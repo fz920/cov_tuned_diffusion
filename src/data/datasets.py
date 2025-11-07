@@ -44,15 +44,21 @@ def load_dataset(dataset: str = "aldp", device: str | torch.device = "cuda", par
     return training_data
 
 
-def load_target_dist(dataset: str):
-    """Return the energy function associated with a dataset identifier."""
+def load_target_dist(dataset: str, device: str | torch.device | None = None):
+    """
+    Return the energy function associated with a dataset identifier.
+
+    The optional ``device`` argument is accepted for backwards compatibility
+    with older scripts that routed the desired device through this helper.
+    """
     dataset = dataset.lower()
+    device_str = str(device) if device is not None else None
     if dataset == "dw4":
-        return MultiDoubleWellEnergy(dimensionality=8, n_particles=4)
+        return MultiDoubleWellEnergy(dimensionality=8, n_particles=4, device=device_str or "cuda")
     if dataset == "lj13":
-        return LennardJonesEnergy(dimensionality=39, n_particles=13)
+        return LennardJonesEnergy(dimensionality=39, n_particles=13, device=device_str or "cuda")
     if dataset == "lj55":
-        return LennardJonesEnergy(dimensionality=165, n_particles=55)
+        return LennardJonesEnergy(dimensionality=165, n_particles=55, device=device_str or "cuda")
     if dataset == "aldp":
         return AldpEnergy(temperature=300.0)
     raise ValueError(f"Unknown dataset '{dataset}'.")

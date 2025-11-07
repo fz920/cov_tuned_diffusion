@@ -184,16 +184,20 @@ def tune_params(args) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
 
     # --------- Load model & target ----------
-    # Configs
-    with open(get_config_path(args.dataset, str(args.model_index)), "r") as f:
+    config_path = get_config_path(args.dataset, args.net)
+    with open(config_path, "r") as f:
         model_config = yaml.safe_load(f)
 
-    score_model = ScoreNet(dataset=args.dataset, net=args.net, model_config=model_config, device=str(device))
-    score_model = score_model.to(device)
+    score_model = ScoreNet(dataset=args.dataset, net=args.net, model_config=model_config, device=str(device)).to(device)
+    ckpt_path = get_model_checkpoint_path(args.dataset, args.net, "score", args.model_index)
+    ckpt = torch.load(ckpt_path, map_location=device)
+    score_model.load_state_dict(ckpt["model_state_dict"])
     score_model.eval()  # tuning hyperparameters, model is fixed
+    score_model.requires_grad_(False)
 
     # Dataset (for labels if ALDP) & target distribution (for log_prob)
-    _, true_target = load_target_dist(args.dataset, device=device)
+    true_target = load_target_dist(args.dataset, device=device)
+    train_data = load_dataset(args.dataset, partition="train", device=device)
     # time-step endpoints from model (kept aligned with your class)
     eps, T = score_model.eps, score_model.T
 
@@ -214,6 +218,35 @@ def tune_params(args) -> None:
     E[:m-1, :m-1] = torch.eye(m-1, device=device)
     E[m-1, :] = -1.0
     proj_mat = torch.kron(E, torch.eye(n, device=device))  # (mn, n(m-1))
+
+    data_iterator = None
+
+    def _draw_x0_batch(num_samples: int) -> torch.Tensor:
+        nonlocal data_iterator
+        if isinstance(train_data, torch.Tensor):
+            num_data = train_data.shape[0]
+            if num_data == 0:
+                return torch.randn(num_samples, m, n, device=device)
+            idx = torch.randint(0, num_data, (num_samples,), device=train_data.device)
+            return train_data[idx]
+        if hasattr(train_data, "__iter__"):
+            if data_iterator is None:
+                data_iterator = iter(train_data)
+            try:
+                batch = next(data_iterator)
+            except StopIteration:
+                data_iterator = iter(train_data)
+                batch = next(data_iterator)
+            if isinstance(batch, (list, tuple)):
+                batch = batch[0]
+            batch = batch.to(device)
+            if batch.dim() == 2:
+                batch = batch.unsqueeze(0)
+            if batch.shape[0] >= num_samples:
+                return batch[:num_samples]
+            repeats = (num_samples + batch.shape[0] - 1) // batch.shape[0]
+            return batch.repeat(repeats, 1, 1)[:num_samples]
+        return torch.randn(num_samples, m, n, device=device)
 
     cov_params = {}
     if args.mode == "full_generic":
@@ -244,7 +277,18 @@ def tune_params(args) -> None:
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
 
     # --------- Checkpoint paths ----------
-    param_ckpt = get_params_checkpoint_path(args.dataset, str(args.model_index), str(args.params_index))
+    ckpt_kwargs = {"tune_timesteps": args.tune_time_steps}
+    if args.mode == "aldp" and args.cov_form == "diag":
+        ckpt_kwargs["diag"] = True
+    if args.mode == "score":
+        ckpt_kwargs["model"] = True
+    param_ckpt = get_params_checkpoint_path(
+        args.dataset,
+        args.net,
+        params_index=args.params_index,
+        num_steps=args.num_steps,
+        **ckpt_kwargs,
+    )
     Path(param_ckpt).parent.mkdir(parents=True, exist_ok=True)
 
     log_path = Path(CHECKPOINTS_DIR) / args.dataset / "logs"
@@ -316,26 +360,8 @@ def tune_params(args) -> None:
                 ))
 
         # ---- draw a batch of x0 and compute log_prob ----
-        # For tuning we only need a reference batch to estimate forward ESS.
-        # We keep it simple here; project-specific loaders can replace this with your canonical sampler.
-        # Using the target distribution for log_prob and sampling x0 through the dataset if available:
-        # (Assumes load_dataset returns a DataLoader or (train, val, test). Adjust if needed.)
-        dataset = load_dataset(args.dataset, split="train", device=device)
-        if hasattr(dataset, "__iter__"):
-            try:
-                batch = next(iter(dataset))
-                x0 = batch.to(device)
-            except Exception:
-                # fallback: if dataset is not directly iterable into tensors, try calling .dataset[0]
-                if hasattr(dataset, "dataset"):
-                    x0 = dataset.dataset[0][0].to(device)
-                    x0 = x0.unsqueeze(0).repeat(args.num_samples, 1, 1)
-                else:
-                    # As a last resort, sample standard Gaussian and rely on target log_prob (may mismatch)
-                    x0 = torch.randn(args.num_samples, m, n, device=device)
-        else:
-            # fallback: random batch
-            x0 = torch.randn(args.num_samples, m, n, device=device)
+        # Reuse the cached training split whenever possible; fallback to Gaussian noise only if sampling fails.
+        x0 = _draw_x0_batch(args.num_samples)
 
         # If the project requires removing CoG and/or scaling before evaluating log_prob, adjust here:
         x0 = x0[:args.num_samples]
