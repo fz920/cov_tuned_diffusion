@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cov-tuned-diffusion"
+version = "0.1.0"
+description = "Variance-tuned diffusion models and utilities for Boltzmann sampling."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{name = "Fengzhe Zhang"}]
+license = {text = "MIT"}
+dependencies = []
+
+[project.urls]
+Homepage = "https://openreview.net/forum?id=Jq2dcMCS5R"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cov_tuned_diffusion = ["configs/*.yaml"]
