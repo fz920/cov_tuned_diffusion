@@ -10,15 +10,12 @@ Implementation for the TMLR paper *Efficient and Unbiased Sampling from Boltzman
 ## Quick Start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/fz920/cov_tuned_diffusion.git
 cd cov_tuned_diffusion
 python -m venv .venv && source .venv/bin/activate
-pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e .
 ```
-
-See `requirements.txt` for optional extras (OpenMM, bgflow, etc.).
 
 ---
 
