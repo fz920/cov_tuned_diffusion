@@ -1,7 +1,6 @@
 """Model exports for the variance-tuned diffusion package."""
 
 from .score_net import ScoreNet
-from .covariance import CovNet
 from .utils import (
     remove_mean,
     sample_center_gravity_zero_gaussian,

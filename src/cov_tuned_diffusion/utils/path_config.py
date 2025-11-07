@@ -8,8 +8,11 @@ import os
 from pathlib import Path
 
 # Resolve key directories. Allow overriding the storage root with COV_TUNED_BASE.
-PACKAGE_DIR = Path(__file__).resolve().parents[2]
+# PACKAGE_DIR now points to the installed python package (src/cov_tuned_diffusion)
+# so that relative resources like configs resolve correctly even after restructuring.
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
+# Store checkpoints/etc. at the parent of the repo (e.g., dissertation/), unless overridden.
 DEFAULT_BASE = PROJECT_ROOT.parent
 BASE_DIR = Path(os.getenv("COV_TUNED_BASE", DEFAULT_BASE))
 

@@ -2,7 +2,6 @@
 
 from .models import (
     ScoreNet,
-    CovNet,
     remove_mean,
     sample_center_gravity_zero_gaussian,
     construct_R,
