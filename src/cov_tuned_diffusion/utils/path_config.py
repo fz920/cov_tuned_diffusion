@@ -25,7 +25,7 @@ PARAMS_CHECKPOINTS_LOW_RANK_DIR = CHECKPOINTS_DIR / "params_checkpoints_low_rank
 PARAMS_CHECKPOINTS_MODEL_DIR = CHECKPOINTS_DIR / "params_checkpoints_model"
 SAMPLES_DIR = CHECKPOINTS_DIR / "samples"
 SAMPLES_LOW_RANK_DIR = CHECKPOINTS_DIR / "samples_low_rank"
-FIGURES_DIR = BASE_DIR / "figures"
+FIGURES_DIR = CHECKPOINTS_DIR / "figures"
 ESS_CHECKPOINTS_DIR = BASE_DIR / "ess_checkpoints"
 ESS_LOG_DIR = BASE_DIR / "ess_log"
 

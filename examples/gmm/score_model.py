@@ -6,7 +6,7 @@ from utils import MyMLP
 
 class ScoreNet(nn.Module):
     def __init__(self, input_dim, hidden_size=128, n_layers=3, emb_size=128,
-                 time_emb="sinusoidal", device='cuda', cov_form='isotropic'):
+                 time_emb="sinusoidal", device='cuda', cov_form=None):
         super().__init__()
         self.mlp = MyMLP(
             hidden_size=hidden_size,
@@ -51,9 +51,6 @@ class ScoreNet(nn.Module):
     def ddpm_sampler(self, num_steps, num_samples=2000, eps=0.002, T=80.0,
                      true_gmm=None, init_x=None, cov_params=None, time_steps=None,
                      cov_form=None, progress_bar=False):
-        if cov_form is None:
-            cov_form = self.cov_form
-
         if time_steps is None:
             time_steps = torch.tensor(np.geomspace(eps, T, num_steps), dtype=torch.float32).to(self.device)
 

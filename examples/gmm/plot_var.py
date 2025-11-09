@@ -21,11 +21,11 @@ def load_params(checkpoint_path: Union[str, Path]) -> Tuple[np.ndarray, np.ndarr
 
 def main():
     parser = argparse.ArgumentParser(description="Plot covariance parameter trends for GMM2 experiments.")
-    parser.add_argument("--input-dim", type=int, default=5, help="Dimensionality of the GMM.")
-    parser.add_argument("--num-steps", type=int, default=40, help="Number of diffusion steps.")
-    parser.add_argument("--params-index", type=int, default=1, help="Parameter checkpoint index to load.")
+    parser.add_argument("--input_dim", type=int, default=5, help="Dimensionality of the GMM.")
+    parser.add_argument("--num_steps", type=int, default=40, help="Number of diffusion steps.")
+    parser.add_argument("--params_index", type=int, default=1, help="Parameter checkpoint index to load.")
     parser.add_argument(
-        "--cov-form",
+        "--cov_form",
         type=str,
         default="isotropic",
         choices=["isotropic", "diagonal", "full"],
@@ -38,13 +38,13 @@ def main():
         help="Rank for full covariance models (ignored for other forms).",
     )
     parser.add_argument(
-        "--baseline-t-min",
+        "--baseline_t_min",
         type=float,
         default=2e-3,
         help="Minimum time step for the baseline geometric schedule.",
     )
     parser.add_argument(
-        "--baseline-t-max",
+        "--baseline_t_max",
         type=float,
         default=80.0,
         help="Maximum time step for the baseline geometric schedule.",

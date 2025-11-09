@@ -12,13 +12,13 @@ from cov_tuned_diffusion.utils.path_config import FIGURES_DIR, get_gmm2_model_ch
 
 def main():
     parser = argparse.ArgumentParser(description="Quick sanity check for trained GMM2 score models.")
-    parser.add_argument("--input-dim", type=int, default=2, help="Dimensionality of the GMM.")
-    parser.add_argument("--n-layers", type=int, default=7, help="Number of GNN layers.")
-    parser.add_argument("--hidden-size", type=int, default=512, help="Hidden dimension of the network.")
-    parser.add_argument("--num-samples", type=int, default=10000, help="Number of samples to draw.")
-    parser.add_argument("--num-steps", type=int, default=1000, help="Number of reverse diffusion steps.")
+    parser.add_argument("--input_dim", type=int, default=2, help="Dimensionality of the GMM.")
+    parser.add_argument("--n_layers", type=int, default=7, help="Number of GNN layers.")
+    parser.add_argument("--hidden_size", type=int, default=512, help="Hidden dimension of the network.")
+    parser.add_argument("--num_samples", type=int, default=10000, help="Number of samples to draw.")
+    parser.add_argument("--num_steps", type=int, default=1000, help="Number of reverse diffusion steps.")
     parser.add_argument(
-        "--output-dir",
+        "--output_dir",
         type=str,
         default=None,
         help="Directory to store diagnostic plots (defaults to figures/gmm2/diagnostics).",

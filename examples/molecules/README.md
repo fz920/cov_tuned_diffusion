@@ -7,6 +7,26 @@ All code reads/writes through `cov_tuned_diffusion/utils/path_config.py`. By def
 ## 0. Prepare data and configs
 
 1. Place the raw datasets in the locations expected by `get_dataset_path` (e.g., `checkpoints/dataset/aldp_train.h5`, `dw4_samples.npy`, etc.).
+
+The following datasets are used in our experiments:
+
+### DW-4 (Double Well 4-particle system)
+- **Source**: [OSF Repository](https://osf.io/srqg7/?view_only=28deeba0845546fb96d1b2f355db0da5)
+- **Citation**: [1]
+- **Filename**: Save as `dw4.pkl` in `checkpoints/dataset/`
+
+### LJ-13 (Lennard-Jones 13-particle system)
+- **Source**: [OSF Repository](https://osf.io/srqg7/?view_only=28deeba0845546fb96d1b2f355db0da5)
+- **Citation**: [1]
+- **Filename**: Save as `lj13.pkl` in `checkpoints/dataset/`
+
+### Alanine Dipeptide
+- **Source**: [Zenodo Repository](https://zenodo.org/records/6993124)
+- **Citation**: [2]
+- **Filename**: Save as `aldp.pkl` in `checkpoints/dataset/`
+
+After downloading, place the datasets in the `checkpoints/dataset/` directory with the filenames specified above.
+
 2. Ensure a model config exists at `src/configs/{dataset}_{net}_score_config.yaml`. The provided configs cover the paper’s settings.
 
 ## 1. Train the score model
@@ -46,8 +66,8 @@ python examples/molecules/cov_tuning/tuning/params_tuning_score.py \
   --params_index 0 \
   --mode aldp \            # choices: score | full_generic | aldp
   --cov_form diag \        # aldp mode: diag | full
-  --num_steps 100 \
-  --num_epochs 2000 \
+  --num_steps 40 \
+  --num_epochs 5000 \
   --num_samples 512 \
   --tune_time_steps
 ```
