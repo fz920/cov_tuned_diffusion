@@ -33,11 +33,11 @@ After downloading, place the datasets in the `checkpoints/dataset/` directory wi
 
 ```bash
 python examples/molecules/score_training.py \
-  --dataset aldp \
+  --dataset dw4 \
   --net egnn \
   --index 0 \
-  --train_num_samples 4096 \
-  --num_epochs 10000 \
+  --train_num_samples 512 \
+  --num_epochs 20000 \
   --save_freq 500
 ```
 
@@ -47,7 +47,7 @@ The script trains an EDM-style EGNN with EMA updates. Checkpoints plus optimizer
 
 ```bash
 python examples/molecules/score_test.py \
-  --dataset aldp \
+  --dataset dw4 \
   --net egnn \
   --index 0 \
   --num_steps 500 \
@@ -60,16 +60,15 @@ This sampler compares ground-truth energies/distances against reverse-diffusion 
 
 ```bash
 python examples/molecules/cov_tuning/tuning/params_tuning_score.py \
-  --dataset aldp \
+  --dataset dw4 \
   --net egnn \
   --model_index 0 \
   --params_index 0 \
-  --mode aldp \            # choices: score | full_generic | aldp
+  --mode score \            # choices: score | full_dw4lj13 | aldp
   --cov_form diag \        # aldp mode: diag | full
   --num_steps 40 \
   --num_epochs 5000 \
-  --num_samples 512 \
-  --tune_time_steps
+  --num_samples 512
 ```
 
 Key modes:

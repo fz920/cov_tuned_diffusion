@@ -24,8 +24,6 @@ def main():
     parser.add_argument('--cont_training', action='store_true', help='Continue training from a checkpoint')
     parser.add_argument('--index', type=int, default=0)
 
-    parser.add_argument('--use_ot', action='store_true', help='Use OT loss')
-
     args = parser.parse_args()
 
     # Set seed and device
@@ -46,7 +44,7 @@ def main():
     score_model_online.load_state_dict(score_model.state_dict())
 
     # Get checkpoint path and log file path
-    checkpoint_path = get_model_checkpoint_path(args.dataset, args.net, "score", args.index, args.use_ot)
+    checkpoint_path = get_model_checkpoint_path(args.dataset, args.net, "score", args.index)
     
     # Create log file
     log_dir = os.path.dirname(checkpoint_path)
@@ -82,7 +80,7 @@ def main():
 
         x0 = training_data[np.random.choice(total_num_samples, args.train_num_samples, replace=False), :, :]
 
-        loss = score_model_online.compute_loss(x0, use_ot=args.use_ot)
+        loss = score_model_online.compute_loss(x0)
 
         loss.backward()
         optimizer.step()

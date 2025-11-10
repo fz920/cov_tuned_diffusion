@@ -60,7 +60,18 @@ for directory in [
 # Helper functions to get specific paths
 def get_config_path(dataset, net, type="score"):
     """Get the path to a model configuration file."""
-    return CONFIG_DIR / f"{dataset}_{net}_{type}_config.yaml"
+    preferred = CONFIG_DIR / f"{dataset}_{net}_{type}_config.yaml"
+    if preferred.exists():
+        return preferred
+
+    legacy = CONFIG_DIR / f"{dataset}_{net}_config.yaml"
+    if legacy.exists():
+        return legacy
+
+    raise FileNotFoundError(
+        f"Config not found for dataset '{dataset}' and net '{net}'. "
+        f"Tried {preferred} and {legacy}."
+    )
 
 def get_model_checkpoint_path(dataset, net, model_type="score", model_index=0, use_ot=False):
     """Get the path to a model checkpoint."""

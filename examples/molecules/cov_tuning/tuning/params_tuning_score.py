@@ -296,7 +296,8 @@ def tune_params(args) -> None:
     log_file = log_path / f"tuning__{args.mode}__m{args.model_index}__p{args.params_index}.log"
 
     # --------- Optimization loop ----------
-    for epoch in tqdm(range(args.num_epochs), desc=f"Tuning ({args.mode})"):
+    progress_bar = tqdm(range(args.num_epochs), desc=f"Tuning ({args.mode})")
+    for epoch in progress_bar:
         optimizer.zero_grad()
 
         # build time steps
@@ -370,17 +371,17 @@ def tune_params(args) -> None:
         # ---- compute forward ESS with model adapters ----
         def _estimate_forward_ess_scalar():
             if hasattr(score_model, "est_forward_ess"):
-                _, ess, _ = score_model.est_forward_ess(
+                alpha_div, ess, _ = score_model.est_forward_ess(
                     x0, log_prob_x0, num_steps=args.num_steps, time_steps=time_steps,
                     nus=nus, progress_bar=False, alpha=args.alpha, tune_time_steps=args.tune_time_steps
                 )
-                return ess
+                return alpha_div, ess
             elif hasattr(score_model, "estimate_forward_ess"):
-                _, ess, _ = score_model.estimate_forward_ess(
+                alpha_div, ess, _ = score_model.estimate_forward_ess(
                     x0, log_prob_x0, num_steps=args.num_steps, time_steps=time_steps,
                     proposal="scalar", nus=nus, progress_bar=False, alpha=args.alpha, tune_time_steps=args.tune_time_steps
                 )
-                return ess
+                return alpha_div, ess
             else:
                 raise RuntimeError("ScoreNet missing forward ESS method.")
 
@@ -388,32 +389,41 @@ def tune_params(args) -> None:
             if cov is None:
                 return _estimate_forward_ess_scalar()
             if hasattr(score_model, "forward_ess_low_rank"):
-                _, ess, _ = score_model.forward_ess_low_rank(
+                alpha_div, ess, _ = score_model.forward_ess_low_rank(
                     x0, log_prob_x0, num_steps=args.num_steps, time_steps=time_steps,
                     cov_mat_all=cov, progress_bar=False, alpha=args.alpha
                 )
-                return ess
+                return alpha_div, ess
             elif hasattr(score_model, "estimate_forward_ess"):
-                _, ess, _ = score_model.estimate_forward_ess(
+                alpha_div, ess, _ = score_model.estimate_forward_ess(
                     x0, log_prob_x0, num_steps=args.num_steps, time_steps=time_steps,
                     proposal="fullcov", cov_mats=cov, progress_bar=False, alpha=args.alpha
                 )
-                return ess
+                return alpha_div, ess
             else:
                 raise RuntimeError("ScoreNet missing forward ESS method.")
 
-        forward_ess = _estimate_forward_ess_fullcov(cov_mat_all)
-        loss = -forward_ess  # maximize ESS
+        alpha_div, forward_ess = _estimate_forward_ess_fullcov(cov_mat_all)
+        loss = alpha_div  # minimize alpha-divergence
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
         optimizer.step()
         scheduler.step()
 
+        ess_pct = (forward_ess / args.num_samples) * 100.0
+        progress_bar.set_postfix(
+            alpha_div=float(alpha_div.detach()),
+            ess_pct=float(ess_pct.detach()),
+        )
+
         # Logging
         if epoch % args.log_every == 0 or epoch == args.num_epochs - 1:
             with open(log_file, "a") as f:
-                f.write(f"epoch={epoch} forward_ess={forward_ess.item():.6f}\n")
+                f.write(
+                    f"epoch={epoch} alpha_div={alpha_div.item():.6f} ess_pct={ess_pct.item():.2f}% "
+                    f"(raw_ess={forward_ess.item():.6f})\n"
+                )
 
         # Save lightweight checkpoint
         if epoch % args.save_freq == 0 or epoch == args.num_epochs - 1:
@@ -459,8 +469,8 @@ def make_argparser():
     p.add_argument("--params_index", type=int, default=0)
 
     # tuning knobs
-    p.add_argument("--mode", type=str, choices=["score","full_generic","aldp"], default="score",
-                   help="Which family to tune: scalar score params, generic full-cov, or ALDP-specific.")
+    p.add_argument("--mode", type=str, choices=["score","full_dw4lj13","aldp"], default="score",
+                   help="Which family to tune: scalar score params, full covariance for dw4 and lj13, or ALDP-specific.")
     p.add_argument("--tune_time_steps", action="store_true", default=False)
 
     # optimization

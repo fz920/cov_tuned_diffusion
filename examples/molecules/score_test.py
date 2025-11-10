@@ -70,8 +70,6 @@ def main():
     parser.add_argument('--num_steps', type=int, default=500, help='Number of sampling steps')
     parser.add_argument('--index', type=int, default=0, help='Index of the model checkpoint')
 
-    parser.add_argument('--use_ot', action='store_true', help='Use OT loss')
-
     args = parser.parse_args()
 
     # Set device

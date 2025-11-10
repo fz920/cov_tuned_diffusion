@@ -214,7 +214,7 @@ class ScoreNet(nn.Module):
 
         return loss
 
-    def sample_ddpm(
+    def ddpm_sampler(
         self,
         num_steps: int,
         true_target,                         # distribution with .log_prob on x0-space
